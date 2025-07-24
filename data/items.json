@@ -46,5 +46,14 @@
     "description": "good",
     "wanted_item": "Pool Table",
     "contact": "551931093"
+  },
+  {
+    "user_id": "7169168235",
+    "photo": "images/7169168235_AQADVvIxG72TEUh9.jpg",
+    "name": "Chair",
+    "category": "Furniture",
+    "description": "asdasdasdas",
+    "wanted_item": "Sofa",
+    "contact": "555 333 444"
   }
 ]
