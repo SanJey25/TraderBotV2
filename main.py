@@ -146,13 +146,42 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+# ===== My Items =====
+async def show_my_items(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+
+    with open(ITEMS_FILE, "r") as f:
+        try:
+            items = json.load(f)
+        except json.JSONDecodeError:
+            items = []
+
+    user_items = [item for item in items if item.get("user_id") == user_id]
+
+    if not user_items:
+        await update.message.reply_text("📭 You haven't uploaded any items yet.")
+        return
+
+    for item in user_items:
+        caption = (
+            f"📦 *{item['name']}*\n"
+            f"🏷 Category: {item['category']}\n"
+            f"📝 {item['description']}\n"
+            f"🎯 Wants: {item['wanted_item']}"
+        )
+        with open(item["photo"], "rb") as img:
+            await update.message.reply_photo(photo=img, caption=caption, parse_mode="Markdown")
+
 # ===== Main Menu =====
-async def show_main_menu(update: Update):
+async def show_main_menu(update_or_query):
     buttons = [
         ["My Profile", "My Items"],
         ["Search Barter Items", "Upload New Item"]
     ]
-    await update.message.reply_text("📋 Main Menu:", reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True))
+    if hasattr(update_or_query, "message"):
+        await update_or_query.message.reply_text("📋 Main Menu:", reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True))
+    elif hasattr(update_or_query, "callback_query"):
+        await update_or_query.callback_query.message.reply_text("📋 Main Menu:", reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True))
 
 # ===== Loaders =====
 def load_profiles():
@@ -200,6 +229,7 @@ async def perform_search(update: Update, context):
 
     if not matched:
         await update.message.reply_text("❌ No items found.")
+        await show_main_menu(update)
         return ConversationHandler.END
 
     context.user_data["search_results"] = matched
@@ -212,6 +242,7 @@ async def show_next_search_result(update_or_query, context):
 
     if index >= len(results):
         await update_or_query.message.reply_text("🚫 No more items found.")
+        await show_main_menu(update_or_query)
         return ConversationHandler.END
 
     item = results[index]
@@ -220,31 +251,46 @@ async def show_next_search_result(update_or_query, context):
         f"🏷 Category: {item['category']}\n"
         f"📝 {item['description']}\n"
         f"🎯 Wants: {item['wanted_item']}\n"
-        f"📞 Contact: {item['contact']}"
+        f"📞 Contact: [Hidden until matched ✅]"
     )
 
-    buttons = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("✅ Match", callback_data="search_match"),
-            InlineKeyboardButton("❌ Pass", callback_data="search_pass")
-        ]
-    ])
+    buttons = InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Match", callback_data="search_match"),
+        InlineKeyboardButton("❌ Pass", callback_data="search_pass")
+    ]])
 
     with open(item['photo'], "rb") as img:
-        await update_or_query.message.reply_photo(photo=img, caption=caption, parse_mode="Markdown", reply_markup=buttons)
+        await update_or_query.message.reply_photo(
+            photo=img,
+            caption=caption,
+            parse_mode="Markdown",
+            reply_markup=buttons
+        )
     return SEARCH_DISPLAY
 
 async def handle_search_action(update: Update, context):
     query = update.callback_query
     await query.answer()
     action = query.data
+    index = context.user_data.get("search_index", 0)
+    results = context.user_data.get("search_results", [])
+
+    if index >= len(results):
+        await query.message.reply_text("🚫 No more items found.")
+        await show_main_menu(query)
+        return ConversationHandler.END
+
+    item = results[index]
 
     if action == "search_pass":
         context.user_data["search_index"] += 1
         return await show_next_search_result(query, context)
+
     elif action == "search_match":
+        contact = item.get("contact", "No contact provided.")
         await query.edit_message_reply_markup(reply_markup=None)
-        await query.message.reply_text("✅ You matched with this item!")
+        await query.message.reply_text(f"✅ You matched with this item!\n\n📞 Contact: {contact}")
+        await show_main_menu(query)
         return ConversationHandler.END
 
 # ===== Main Entrypoint =====
@@ -287,6 +333,7 @@ def main():
     app.add_handler(upload_conv)
     app.add_handler(search_conv)
     app.add_handler(MessageHandler(filters.Regex("^(My Profile)$"), show_profile))
+    app.add_handler(MessageHandler(filters.Regex("^(My Items)$"), show_my_items))
 
     print("🤖 Bot running...", flush=True)
     app.run_polling()
